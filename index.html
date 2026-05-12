@@ -275,6 +275,26 @@
       border-radius: 10px; font-size: .88rem; font-weight: 600;
     }
 
+    /* ── Export buttons ── */
+    .export-section { display: flex; flex-direction: column; gap: 8px; }
+    .export-label { font-size: .65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .09em; text-align: center; }
+    .export-row { display: flex; gap: 8px; }
+    .btn-export {
+      flex: 1; padding: 11px; font-size: .85rem; font-weight: 700;
+      border-radius: 10px; border: none; cursor: pointer;
+      transition: opacity .2s, transform .1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-export:active { transform: scale(.97); opacity: .85; }
+    .btn-kml {
+      background: rgba(52,211,153,.12); color: var(--accent3);
+      border: 1px solid rgba(52,211,153,.3);
+    }
+    .btn-gpx {
+      background: rgba(129,140,248,.12); color: var(--accent2);
+      border: 1px solid rgba(129,140,248,.3);
+    }
+
     /* ── Coordinates tab ── */
     .coords-header {
       width: 100%; max-width: 480px;
@@ -437,6 +457,15 @@
             </div>
 
             <button class="btn-new-trip" onclick="resetTrip()">+ Nueva Grabación</button>
+
+            <div class="export-section">
+              <span class="export-label">Exportar ruta</span>
+              <div class="export-row">
+                <button class="btn-export btn-kml" onclick="exportKML()">&#11015; KML · Google Earth</button>
+                <button class="btn-export btn-gpx" onclick="exportGPX()">&#11015; GPX · Universal</button>
+              </div>
+            </div>
+
           </div>
 
         </div>
@@ -921,6 +950,136 @@
       y: Math.round((N+alt)*Math.cos(latR)*Math.sin(lonR)),
       z: Math.round((N*(1-e2)+alt)*Math.sin(latR))
     };
+  }
+
+  /* ═══════════════════════════════════
+     EXPORT KML / GPX
+  ═══════════════════════════════════ */
+  function downloadFile(content, filename, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  function tripFilename(ext) {
+    const d = new Date(tripPoints[0]?.ts || Date.now());
+    const pad = n => String(n).padStart(2,'0');
+    return `recorrido_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`;
+  }
+
+  function exportKML() {
+    if (tripPoints.length < 2) { alert('No hay suficientes puntos grabados para exportar.'); return; }
+
+    const coords = tripPoints
+      .map(p => `${p.lon},${p.lat},${p.alt ?? 0}`)
+      .join('\n          ');
+
+    const start = tripPoints[0];
+    const end   = tripPoints[tripPoints.length - 1];
+
+    const speeds = tripPoints.map(p => p.speed).filter(s => s !== null && s >= 0);
+    const maxKmh = speeds.length ? (Math.max(...speeds) * 3.6).toFixed(1) : '—';
+    const avgKmh = speeds.length ? (speeds.reduce((a,b)=>a+b,0)/speeds.length*3.6).toFixed(1) : '—';
+
+    let distM = 0;
+    for (let i = 1; i < tripPoints.length; i++)
+      distM += haversine(tripPoints[i-1].lat, tripPoints[i-1].lon, tripPoints[i].lat, tripPoints[i].lon);
+    const distTxt = distM >= 1000 ? (distM/1000).toFixed(2)+' km' : Math.round(distM)+' m';
+    const durTxt  = formatDuration(end.ts - start.ts);
+
+    const altDiff = (start.alt !== null && end.alt !== null)
+      ? ((end.alt - start.alt) >= 0 ? '+' : '') + Math.round(end.alt - start.alt) + ' m'
+      : 'Sin datos';
+
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Recorrido GPS</name>
+    <description>Grabado con GPS Velocímetro V1.0 por Mauricio Rodríguez</description>
+    <Style id="routeLine">
+      <LineStyle><color>ffed3d56</color><width>4</width></LineStyle>
+    </Style>
+    <Style id="startPin">
+      <IconStyle><color>ff3dcc56</color><scale>1.1</scale>
+        <Icon><href>https://maps.google.com/mapfiles/kml/paddle/go.png</href></Icon>
+      </IconStyle>
+    </Style>
+    <Style id="endPin">
+      <IconStyle><color>ff5656f8</color><scale>1.1</scale>
+        <Icon><href>https://maps.google.com/mapfiles/kml/paddle/stop.png</href></Icon>
+      </IconStyle>
+    </Style>
+    <Placemark>
+      <name>Inicio</name>
+      <styleUrl>#startPin</styleUrl>
+      <Point><coordinates>${start.lon},${start.lat},${start.alt ?? 0}</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>Fin</name>
+      <styleUrl>#endPin</styleUrl>
+      <Point><coordinates>${end.lon},${end.lat},${end.alt ?? 0}</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>Ruta del recorrido</name>
+      <description><![CDATA[
+        <b>Velocidad máxima:</b> ${maxKmh} km/h<br/>
+        <b>Velocidad promedio:</b> ${avgKmh} km/h<br/>
+        <b>Diferencia de altura:</b> ${altDiff}<br/>
+        <b>Distancia:</b> ${distTxt}<br/>
+        <b>Duración:</b> ${durTxt}<br/>
+        <b>Puntos GPS:</b> ${tripPoints.length}
+      ]]></description>
+      <styleUrl>#routeLine</styleUrl>
+      <LineString>
+        <extrude>0</extrude>
+        <tessellate>1</tessellate>
+        <altitudeMode>clampToGround</altitudeMode>
+        <coordinates>
+          ${coords}
+        </coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>`;
+
+    downloadFile(kml, tripFilename('kml'), 'application/vnd.google-earth.kml+xml');
+  }
+
+  function exportGPX() {
+    if (tripPoints.length < 2) { alert('No hay suficientes puntos grabados para exportar.'); return; }
+
+    const trkpts = tripPoints.map(p => {
+      const time = new Date(p.ts).toISOString();
+      const ele  = p.alt !== null ? `\n        <ele>${p.alt.toFixed(2)}</ele>` : '';
+      const spd  = p.speed !== null ? `\n        <speed>${p.speed.toFixed(3)}</speed>` : '';
+      return `    <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lon.toFixed(8)}">${ele}
+        <time>${time}</time>${spd}
+      </trkpt>`;
+    }).join('\n');
+
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1"
+  creator="GPS Velocímetro V1.0 por Mauricio Rodríguez"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>Recorrido GPS</name>
+    <time>${new Date(tripPoints[0].ts).toISOString()}</time>
+  </metadata>
+  <trk>
+    <name>Recorrido GPS</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+    downloadFile(gpx, tripFilename('gpx'), 'application/gpx+xml');
   }
 
   /* ═══════════════════════════════════
