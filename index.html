@@ -62,6 +62,18 @@
     #status-dot.active { background: var(--accent3); box-shadow: 0 0 8px var(--accent3); }
     #status-dot.error  { background: var(--danger); }
 
+    /* ── Wake lock badge ── */
+    #wakelock-badge {
+      display: none;
+      font-size: .68rem; font-weight: 600;
+      background: rgba(251,191,36,.12);
+      color: #fbbf24;
+      border: 1px solid rgba(251,191,36,.25);
+      padding: 3px 9px; border-radius: 20px;
+      letter-spacing: .02em;
+    }
+    #wakelock-badge.active { display: inline-block; }
+
     /* ── Tab bar ── */
     .tab-bar {
       display: flex;
@@ -348,6 +360,7 @@
     <h1>GPS &amp; Speed</h1>
     <div style="display:flex;align-items:center;gap:10px">
       <button id="btn-install" onclick="installApp()">&#11015; Instalar</button>
+      <span id="wakelock-badge">&#9728; Pantalla activa</span>
       <div id="status-dot"></div>
     </div>
   </header>
@@ -567,6 +580,7 @@
   let maxSpeed      = 0;
   let speedSamples  = [];
   let lastPos       = null;
+  let wakeLock      = null;
 
   let isRecording       = false;
   let tripPoints        = [];        // { lat, lon, alt, speed, ts }
@@ -621,6 +635,7 @@
     watchId = navigator.geolocation.watchPosition(onPosition, onError,
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
     isTracking = true;
+    requestWakeLock();
   }
 
   function stopTracking() {
@@ -631,7 +646,33 @@
     document.getElementById('status-dot').className  = '';
     setMessage('Medición detenida.');
     updateSpeedo(0);
+    releaseWakeLock();
   }
+
+  /* ── Wake Lock ── */
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      document.getElementById('wakelock-badge').classList.add('active');
+      wakeLock.addEventListener('release', () => {
+        wakeLock = null;
+        document.getElementById('wakelock-badge').classList.remove('active');
+      });
+    } catch (e) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
+    document.getElementById('wakelock-badge').classList.remove('active');
+  }
+
+  // Re-adquirir si el navegador lo libera al volver de segundo plano
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isTracking && !wakeLock) {
+      requestWakeLock();
+    }
+  });
 
   function resetStats() {
     maxSpeed = 0; speedSamples = [];
