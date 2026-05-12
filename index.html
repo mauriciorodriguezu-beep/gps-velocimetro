@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Velocímetro" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>GPS Velocímetro</title>
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --card:    #243347;
+      --accent:  #38bdf8;
+      --accent2: #818cf8;
+      --accent3: #34d399;
+      --text:    #f1f5f9;
+      --muted:   #94a3b8;
+      --danger:  #f87171;
+      --border:  rgba(255,255,255,0.06);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+    }
+
+    body { display: flex; flex-direction: column; min-height: 100dvh; }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px 10px;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: .02em; color: var(--accent); }
+
+    /* ── Install button ── */
+    #btn-install {
+      display: none; flex: unset;
+      padding: 6px 12px; font-size: .75rem; font-weight: 700;
+      background: rgba(56,189,248,.12); color: var(--accent);
+      border: 1px solid rgba(56,189,248,.3); border-radius: 20px;
+      letter-spacing: .02em; white-space: nowrap;
+    }
+
+    #status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--muted); transition: background .4s;
+    }
+    #status-dot.active { background: var(--accent3); box-shadow: 0 0 8px var(--accent3); }
+    #status-dot.error  { background: var(--danger); }
+
+    /* ── Tab bar ── */
+    .tab-bar {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tab-btn {
+      flex: 1; padding: 11px 0; border: none;
+      background: transparent; color: var(--muted);
+      font-size: .88rem; font-weight: 600; cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color .2s, border-color .2s;
+      -webkit-tap-highlight-color: transparent; letter-spacing: .02em;
+    }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Page / scroll area ── */
+    .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .tab-content { display: none; }
+    .tab-content.active {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 14px; padding: 16px 16px 24px;
+    }
+
+    /* ── Bottom bar ── */
+    .bottom-bar {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 6px; padding: 10px 16px 14px; flex-shrink: 0;
+      border-top: 1px solid var(--border); background: var(--bg);
+    }
+    #accuracy-badge {
+      font-size: .72rem; background: rgba(255,255,255,.06);
+      padding: 4px 10px; border-radius: 20px; color: var(--muted);
+    }
+    #message { font-size: .78rem; color: var(--muted); text-align: center; line-height: 1.5; }
+    #message.error { color: var(--danger); }
+
+    /* ── Speedometer ── */
+    .speedo-wrap { width: 100%; max-width: 300px; }
+    svg#speedo {
+      width: 100%; height: auto; overflow: visible;
+      filter: drop-shadow(0 4px 24px rgba(56,189,248,.15));
+    }
+    #arc-fill { transition: stroke-dashoffset .6s cubic-bezier(.34,1.56,.64,1); }
+    #main-speed {
+      font-size: 3.5rem; font-weight: 800; fill: var(--text);
+      text-anchor: middle; dominant-baseline: middle;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    #main-unit { font-size: 1rem; fill: var(--muted); text-anchor: middle; font-family: 'Segoe UI', system-ui, sans-serif; }
+
+    /* ── Unit cards ── */
+    .cards {
+      display: grid; grid-template-columns: repeat(3,1fr);
+      gap: 10px; width: 100%; max-width: 480px;
+    }
+    .card {
+      background: var(--card); border-radius: 14px; padding: 14px 10px;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 6px; border: 1px solid var(--border);
+    }
+    .card .val  { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+    .card .unit { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .card.kmh .val { color: var(--accent); }
+    .card.ms  .val { color: var(--accent2); }
+    .card.mhr .val { color: var(--accent3); }
+
+    /* ── Live stats ── */
+    .stats {
+      display: grid; grid-template-columns: repeat(2,1fr);
+      gap: 10px; width: 100%; max-width: 480px;
+    }
+    .stat {
+      background: var(--surface); border-radius: 12px; padding: 12px 14px;
+      display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--border);
+    }
+    .stat .label { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+    .stat .value { font-size: 1rem; font-weight: 600; }
+
+    /* ── GPS controls ── */
+    .controls { display: flex; gap: 12px; width: 100%; max-width: 480px; }
+    button {
+      flex: 1; padding: 13px; border: none; border-radius: 12px;
+      font-size: .92rem; font-weight: 600; cursor: pointer;
+      transition: opacity .2s, transform .1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button:active { transform: scale(.97); opacity: .85; }
+    #btn-start { background: var(--accent); color: #0f172a; }
+    #btn-reset { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+    /* ────────────────────────────────────────
+       ── Trip recording section ──
+    ──────────────────────────────────────── */
+    .trip-section {
+      width: 100%; max-width: 480px;
+      background: var(--surface);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .trip-section-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.02);
+    }
+    .trip-section-title {
+      font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+    }
+
+    /* recording pulsing dot in header */
+    @keyframes pulse-rec {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:.35; transform:scale(.8); }
+    }
+    .rec-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--danger);
+      animation: pulse-rec 1s ease-in-out infinite;
+      display: none;
+    }
+    .is-recording .rec-dot { display: block; }
+
+    .trip-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+    /* ── Idle state ── */
+    #trip-idle { display: flex; flex-direction: column; gap: 8px; }
+
+    .btn-record {
+      width: 100%; padding: 13px; flex: unset;
+      background: rgba(52,211,153,.1);
+      color: var(--accent3);
+      border: 1px solid rgba(52,211,153,.3);
+      border-radius: 10px; font-size: .9rem; font-weight: 700;
+    }
+    .trip-hint { font-size: .72rem; color: var(--muted); text-align: center; }
+
+    /* ── Recording state ── */
+    #trip-recording { display: none; flex-direction: column; gap: 12px; }
+
+    .rec-row {
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(248,113,113,.07);
+      border-radius: 10px; padding: 10px 14px;
+      border: 1px solid rgba(248,113,113,.15);
+    }
+    .rec-row .rec-dot-inline {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--danger); flex-shrink: 0;
+      animation: pulse-rec 1s ease-in-out infinite;
+    }
+    .rec-label { font-size: .78rem; font-weight: 700; color: var(--danger); letter-spacing: .1em; }
+    #trip-timer {
+      margin-left: auto; font-size: 1.15rem; font-weight: 700;
+      font-family: 'Courier New', monospace; color: var(--text);
+    }
+    #trip-pts-live { font-size: .7rem; color: var(--muted); text-align: center; }
+
+    .btn-stop-rec {
+      width: 100%; padding: 13px; flex: unset;
+      background: rgba(248,113,113,.1); color: var(--danger);
+      border: 1px solid rgba(248,113,113,.3);
+      border-radius: 10px; font-size: .9rem; font-weight: 700;
+    }
+
+    /* ── Summary state ── */
+    #trip-summary { display: none; flex-direction: column; gap: 12px; }
+
+    .summary-title {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .09em; color: var(--muted); text-align: center;
+    }
+
+    .summary-main {
+      display: grid; grid-template-columns: repeat(2,1fr); gap: 8px;
+    }
+
+    .s-card {
+      background: var(--card); border-radius: 12px; padding: 12px 14px;
+      display: flex; flex-direction: column; gap: 5px;
+      border: 1px solid var(--border);
+    }
+    .s-card.span2 { grid-column: span 2; }
+
+    .s-label { font-size: .65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+    .s-value { font-size: 1.25rem; font-weight: 800; color: var(--text); }
+    .s-value.up   { color: var(--accent3); }
+    .s-value.down { color: var(--danger); }
+    .s-value.flat { color: var(--muted); }
+    .s-sub  { font-size: .7rem; color: var(--muted); }
+
+    .summary-meta {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 8px;
+    }
+    .m-item {
+      background: rgba(255,255,255,.03); border-radius: 10px;
+      padding: 9px 10px; display: flex; flex-direction: column; gap: 3px;
+      border: 1px solid var(--border);
+    }
+    .m-label { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+    .m-value { font-size: .88rem; font-weight: 600; }
+
+    .btn-new-trip {
+      width: 100%; padding: 12px; flex: unset;
+      background: transparent; color: var(--accent);
+      border: 1px solid rgba(56,189,248,.25);
+      border-radius: 10px; font-size: .88rem; font-weight: 600;
+    }
+
+    /* ── Coordinates tab ── */
+    .coords-header {
+      width: 100%; max-width: 480px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .coords-header span { font-size: .75rem; color: var(--muted); }
+    #btn-refresh-coords {
+      padding: 6px 14px; flex: unset; font-size: .78rem;
+      background: var(--surface); color: var(--accent);
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    .coord-list {
+      width: 100%; max-width: 480px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .coord-row {
+      background: var(--card); border-radius: 14px; padding: 14px;
+      border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px;
+    }
+    .coord-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .coord-value-row { display: flex; align-items: center; gap: 10px; }
+    .coord-value {
+      flex: 1; font-size: .92rem; font-weight: 600;
+      word-break: break-all; font-family: 'Courier New', monospace;
+    }
+    .coord-value.placeholder { color: var(--muted); font-style: italic; font-family: inherit; font-weight: 400; }
+    .btn-copy {
+      flex: unset; padding: 7px 14px; font-size: .78rem; font-weight: 600;
+      background: rgba(56,189,248,.12); color: var(--accent);
+      border: 1px solid rgba(56,189,248,.25); border-radius: 8px;
+      white-space: nowrap; min-width: 64px; text-align: center;
+    }
+    .btn-copy.copied {
+      background: rgba(52,211,153,.12); color: var(--accent3);
+      border-color: rgba(52,211,153,.25);
+    }
+    .coord-row.link-row .coord-value a {
+      color: var(--accent2); text-decoration: underline; word-break: break-all; font-size: .85rem;
+    }
+    .no-gps-notice {
+      width: 100%; max-width: 480px; background: var(--surface); border-radius: 14px;
+      padding: 20px; text-align: center; color: var(--muted); font-size: .88rem;
+      line-height: 1.6; border: 1px solid var(--border);
+    }
+    .no-gps-notice strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>GPS Velocímetro</h1>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button id="btn-install" onclick="installApp()">&#11015; Instalar</button>
+      <div id="status-dot"></div>
+    </div>
+  </header>
+
+  <nav class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('speed')">Velocidad</button>
+    <button class="tab-btn"        onclick="switchTab('coords')">Coordenadas</button>
+  </nav>
+
+  <div class="page">
+
+    <!-- ══════════ TAB: VELOCIDAD ══════════ -->
+    <div id="tab-speed" class="tab-content active">
+
+      <!-- Speedometer -->
+      <div class="speedo-wrap">
+        <svg id="speedo" viewBox="0 0 220 140" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="arcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#38bdf8"/>
+              <stop offset="100%" stop-color="#818cf8"/>
+            </linearGradient>
+          </defs>
+          <path d="M 20 120 A 90 90 0 0 1 200 120" fill="none" stroke="#1e293b" stroke-width="14" stroke-linecap="round"/>
+          <path id="arc-fill" d="M 20 120 A 90 90 0 0 1 200 120" fill="none" stroke="url(#arcGrad)"
+            stroke-width="14" stroke-linecap="round" stroke-dasharray="283" stroke-dashoffset="283"/>
+          <g id="ticks" stroke="#334155" stroke-width="1.5"></g>
+          <text id="main-speed" x="110" y="92">0</text>
+          <text id="main-unit"  x="110" y="114">km/h</text>
+        </svg>
+      </div>
+
+      <!-- Unit cards -->
+      <div class="cards">
+        <div class="card kmh"><span class="val" id="val-kmh">0.0</span><span class="unit">km/h</span></div>
+        <div class="card ms"> <span class="val" id="val-ms">0.000</span><span class="unit">m/s</span></div>
+        <div class="card mhr"><span class="val" id="val-mhr">0</span><span class="unit">m/hr</span></div>
+      </div>
+
+      <!-- Live stats -->
+      <div class="stats">
+        <div class="stat"><span class="label">Vel. Máx. sesión</span><span class="value" id="stat-max">0.0 km/h</span></div>
+        <div class="stat"><span class="label">Vel. Prom. sesión</span><span class="value" id="stat-avg">0.0 km/h</span></div>
+        <div class="stat"><span class="label">Altitud</span><span class="value" id="stat-alt">— m</span></div>
+        <div class="stat"><span class="label">Rumbo</span><span class="value" id="stat-heading">—°</span></div>
+      </div>
+
+      <!-- GPS controls -->
+      <div class="controls">
+        <button id="btn-start" onclick="toggleTracking()">Iniciar</button>
+        <button id="btn-reset" onclick="resetStats()">Reiniciar</button>
+      </div>
+
+      <!-- ── Trip recording section ── -->
+      <div class="trip-section" id="trip-section">
+
+        <div class="trip-section-header" id="trip-section-header">
+          <div class="rec-dot" id="trip-rec-dot"></div>
+          <span class="trip-section-title" id="trip-section-title">Recorrido</span>
+        </div>
+
+        <div class="trip-body">
+
+          <!-- IDLE -->
+          <div id="trip-idle">
+            <button class="btn-record" onclick="startTrip()">&#9210; Grabar Recorrido</button>
+            <p class="trip-hint">El GPS se activa automáticamente al grabar</p>
+          </div>
+
+          <!-- RECORDING -->
+          <div id="trip-recording">
+            <div class="rec-row">
+              <div class="rec-dot-inline"></div>
+              <span class="rec-label">REC</span>
+              <span id="trip-timer">0:00:00</span>
+            </div>
+            <div id="trip-pts-live">0 puntos registrados</div>
+            <button class="btn-stop-rec" onclick="stopTrip()">&#9632; Detener Grabación</button>
+          </div>
+
+          <!-- SUMMARY -->
+          <div id="trip-summary">
+            <div class="summary-title">Resumen del Recorrido</div>
+
+            <div class="summary-main">
+              <div class="s-card">
+                <span class="s-label">Vel. Máxima</span>
+                <span class="s-value" id="tr-max-speed">—</span>
+                <span class="s-sub" id="tr-max-speed-ms">—</span>
+              </div>
+              <div class="s-card">
+                <span class="s-label">Vel. Promedio</span>
+                <span class="s-value" id="tr-avg-speed">—</span>
+                <span class="s-sub" id="tr-avg-speed-ms">—</span>
+              </div>
+              <div class="s-card span2">
+                <span class="s-label">Diferencia de Altura</span>
+                <span class="s-value" id="tr-alt-diff">—</span>
+                <span class="s-sub" id="tr-alt-detail">—</span>
+              </div>
+            </div>
+
+            <div class="summary-meta">
+              <div class="m-item"><span class="m-label">Distancia</span><span class="m-value" id="tr-distance">—</span></div>
+              <div class="m-item"><span class="m-label">Duración</span><span class="m-value" id="tr-duration">—</span></div>
+              <div class="m-item"><span class="m-label">Puntos GPS</span><span class="m-value" id="tr-points">—</span></div>
+            </div>
+
+            <button class="btn-new-trip" onclick="resetTrip()">+ Nueva Grabación</button>
+          </div>
+
+        </div>
+      </div>
+      <!-- /trip-section -->
+
+    </div><!-- /tab-speed -->
+
+    <!-- ══════════ TAB: COORDENADAS ══════════ -->
+    <div id="tab-coords" class="tab-content">
+
+      <div class="coords-header">
+        <span id="coords-ts">Sin señal GPS activa</span>
+        <button id="btn-refresh-coords" onclick="refreshCoords()">Actualizar</button>
+      </div>
+
+      <div id="no-gps-notice" class="no-gps-notice">
+        Ve a la pestaña <strong>Velocidad</strong> y presiona <strong>Iniciar</strong> para activar el GPS.
+        Las coordenadas se actualizarán automáticamente.
+      </div>
+
+      <div class="coord-list" id="coord-list" style="display:none">
+        <div class="coord-row">
+          <span class="coord-label">Grados Decimales (DD)</span>
+          <div class="coord-value-row">
+            <span class="coord-value" id="fmt-dd">—</span>
+            <button class="btn-copy" onclick="copyCoord('fmt-dd',this)">Copiar</button>
+          </div>
+        </div>
+        <div class="coord-row">
+          <span class="coord-label">Grados, Minutos, Segundos (DMS)</span>
+          <div class="coord-value-row">
+            <span class="coord-value" id="fmt-dms">—</span>
+            <button class="btn-copy" onclick="copyCoord('fmt-dms',this)">Copiar</button>
+          </div>
+        </div>
+        <div class="coord-row">
+          <span class="coord-label">Grados, Minutos Decimales (DDM)</span>
+          <div class="coord-value-row">
+            <span class="coord-value" id="fmt-ddm">—</span>
+            <button class="btn-copy" onclick="copyCoord('fmt-ddm',this)">Copiar</button>
+          </div>
+        </div>
+        <div class="coord-row">
+          <span class="coord-label">UTM (WGS84)</span>
+          <div class="coord-value-row">
+            <span class="coord-value" id="fmt-utm">—</span>
+            <button class="btn-copy" onclick="copyCoord('fmt-utm',this)">Copiar</button>
+          </div>
+        </div>
+        <div class="coord-row">
+          <span class="coord-label">Geohash</span>
+          <div class="coord-value-row">
+            <span class="coord-value" id="fmt-geohash">—</span>
+            <button class="btn-copy" onclick="copyCoord('fmt-geohash',this)">Copiar</button>
+          </div>
+        </div>
+        <div class="coord-row">
+          <span class="coord-label">ECEF (X, Y, Z en metros)</span>
+          <div class="coord-value-row">
+            <span class="coord-value" id="fmt-ecef">—</span>
+            <button class="btn-copy" onclick="copyCoord('fmt-ecef',this)">Copiar</button>
+          </div>
+        </div>
+        <div class="coord-row link-row">
+          <span class="coord-label">Google Maps</span>
+          <div class="coord-value-row">
+            <span class="coord-value" id="fmt-gmaps">—</span>
+            <button class="btn-copy" onclick="copyCoord('fmt-gmaps-raw',this)">Copiar</button>
+          </div>
+          <span id="fmt-gmaps-raw" style="display:none"></span>
+        </div>
+        <div class="coord-row link-row">
+          <span class="coord-label">Waze</span>
+          <div class="coord-value-row">
+            <span class="coord-value" id="fmt-waze">—</span>
+            <button class="btn-copy" onclick="copyCoord('fmt-waze-raw',this)">Copiar</button>
+          </div>
+          <span id="fmt-waze-raw" style="display:none"></span>
+        </div>
+      </div>
+
+    </div><!-- /tab-coords -->
+
+  </div><!-- /page -->
+
+  <div class="bottom-bar">
+    <div id="accuracy-badge">Precisión GPS: —</div>
+    <div id="message">Presiona <strong>Iniciar</strong> para comenzar a medir la velocidad.</div>
+  </div>
+
+<script>
+  /* ═══════════════════════════════════
+     STATE
+  ═══════════════════════════════════ */
+  let watchId       = null;
+  let isTracking    = false;
+  let maxSpeed      = 0;
+  let speedSamples  = [];
+  let lastPos       = null;
+
+  let isRecording       = false;
+  let tripPoints        = [];        // { lat, lon, alt, speed, ts }
+  let tripStartTime     = null;
+  let tripTimerInterval = null;
+
+  const MAX_SPEEDO_KMH = 200;
+  const ARC_LENGTH     = 283;
+
+  /* ═══════════════════════════════════
+     TICK MARKS
+  ═══════════════════════════════════ */
+  (function drawTicks() {
+    const g = document.getElementById('ticks');
+    for (let i = 0; i <= 10; i++) {
+      const a  = Math.PI - (i / 10) * Math.PI;
+      const cx = 110, cy = 120, r = 90;
+      const len = i % 5 === 0 ? 10 : 5;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', cx + r * Math.cos(a));
+      line.setAttribute('y1', cy - r * Math.sin(a));
+      line.setAttribute('x2', cx + (r - len) * Math.cos(a));
+      line.setAttribute('y2', cy - (r - len) * Math.sin(a));
+      if (i % 5 === 0) { line.setAttribute('stroke','#475569'); line.setAttribute('stroke-width','2'); }
+      g.appendChild(line);
+    }
+  })();
+
+  /* ═══════════════════════════════════
+     TABS
+  ═══════════════════════════════════ */
+  function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach((b, i) =>
+      b.classList.toggle('active', (i === 0) === (name === 'speed')));
+    document.getElementById('tab-speed').classList.toggle('active', name === 'speed');
+    document.getElementById('tab-coords').classList.toggle('active', name === 'coords');
+    if (name === 'coords' && lastPos) renderCoords(lastPos);
+  }
+
+  /* ═══════════════════════════════════
+     GPS TRACKING
+  ═══════════════════════════════════ */
+  function toggleTracking() {
+    isTracking ? stopTracking() : startTracking();
+  }
+
+  function startTracking() {
+    if (!('geolocation' in navigator)) { showMessage('Tu dispositivo no soporta GPS.', true); return; }
+    setMessage('Obteniendo señal GPS...');
+    document.getElementById('btn-start').textContent = 'Detener GPS';
+    document.getElementById('status-dot').className  = '';
+    watchId = navigator.geolocation.watchPosition(onPosition, onError,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+    isTracking = true;
+  }
+
+  function stopTracking() {
+    if (isRecording) stopTrip();
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    isTracking = false;
+    document.getElementById('btn-start').textContent = 'Iniciar';
+    document.getElementById('status-dot').className  = '';
+    setMessage('Medición detenida.');
+    updateSpeedo(0);
+  }
+
+  function resetStats() {
+    maxSpeed = 0; speedSamples = [];
+    ['stat-max','stat-avg'].forEach(id => {
+      document.getElementById(id).textContent = '0.0 km/h';
+    });
+    document.getElementById('stat-alt').textContent     = '— m';
+    document.getElementById('stat-heading').textContent = '—°';
+    document.getElementById('accuracy-badge').textContent = 'Precisión GPS: —';
+    if (!isTracking) updateSpeedo(0);
+  }
+
+  function onPosition(pos) {
+    lastPos = pos;
+    const { speed, altitude, heading, accuracy, latitude, longitude } = pos.coords;
+    document.getElementById('status-dot').className = 'active';
+
+    const ms  = (speed !== null && speed >= 0) ? speed : 0;
+    const kmh = ms * 3.6;
+    const mhr = ms * 3600;
+
+    document.getElementById('accuracy-badge').textContent = `Precisión GPS: ±${Math.round(accuracy)} m`;
+    document.getElementById('val-kmh').textContent        = kmh.toFixed(1);
+    document.getElementById('val-ms').textContent         = ms.toFixed(3);
+    document.getElementById('val-mhr').textContent        = Math.round(mhr).toLocaleString();
+    document.getElementById('main-speed').textContent     = kmh.toFixed(1);
+    updateSpeedo(kmh);
+
+    if (kmh > maxSpeed) {
+      maxSpeed = kmh;
+      document.getElementById('stat-max').textContent = kmh.toFixed(1) + ' km/h';
+    }
+    speedSamples.push(kmh);
+    const avg = speedSamples.reduce((a,b) => a+b, 0) / speedSamples.length;
+    document.getElementById('stat-avg').textContent = avg.toFixed(1) + ' km/h';
+
+    if (altitude !== null) document.getElementById('stat-alt').textContent = Math.round(altitude) + ' m';
+    if (heading  !== null && heading >= 0)
+      document.getElementById('stat-heading').textContent = Math.round(heading) + '° ' + degToCompass(heading);
+
+    setMessage(speed === null
+      ? 'GPS activo. Muévete para registrar velocidad.'
+      : 'Midiendo velocidad en tiempo real.');
+
+    // Record trip point
+    if (isRecording) {
+      tripPoints.push({ lat: latitude, lon: longitude, alt: altitude, speed: ms, ts: pos.timestamp });
+      document.getElementById('trip-pts-live').textContent = tripPoints.length + ' puntos registrados';
+    }
+
+    if (document.getElementById('tab-coords').classList.contains('active')) renderCoords(pos);
+  }
+
+  function onError(err) {
+    document.getElementById('status-dot').className = 'error';
+    const msgs = {
+      1: 'Permiso de ubicación denegado. Permite el acceso al GPS en la configuración.',
+      2: 'No se pudo obtener la posición GPS. Verifica que el GPS esté activado.',
+      3: 'Tiempo de espera agotado. Intenta en un lugar con mejor señal.'
+    };
+    showMessage(msgs[err.code] || 'Error desconocido al acceder al GPS.', true);
+    stopTracking();
+  }
+
+  function updateSpeedo(kmh) {
+    const offset = ARC_LENGTH - Math.min(kmh / MAX_SPEEDO_KMH, 1) * ARC_LENGTH;
+    document.getElementById('arc-fill').setAttribute('stroke-dashoffset', offset);
+  }
+
+  function setMessage(text, isError = false) {
+    const el = document.getElementById('message');
+    el.innerHTML = text; el.className = isError ? 'error' : '';
+  }
+  function showMessage(t, e) { setMessage(t, e); }
+  function degToCompass(d) {
+    return ['N','NE','E','SE','S','SO','O','NO'][Math.round(d/45)%8];
+  }
+
+  /* ═══════════════════════════════════
+     TRIP RECORDING
+  ═══════════════════════════════════ */
+  function showTripState(state) {
+    document.getElementById('trip-idle').style.display     = state === 'idle'      ? 'flex' : 'none';
+    document.getElementById('trip-recording').style.display = state === 'recording' ? 'flex' : 'none';
+    document.getElementById('trip-summary').style.display  = state === 'summary'   ? 'flex' : 'none';
+
+    // pulsing dot & title in section header
+    const dot   = document.getElementById('trip-rec-dot');
+    const title = document.getElementById('trip-section-title');
+    dot.style.display = state === 'recording' ? 'block' : 'none';
+    title.textContent = state === 'recording' ? 'Grabando...'
+                      : state === 'summary'   ? 'Resumen del Recorrido'
+                      : 'Recorrido';
+  }
+
+  function startTrip() {
+    if (!isTracking) startTracking();   // auto-start GPS
+    isRecording    = true;
+    tripPoints     = [];
+    tripStartTime  = Date.now();
+    document.getElementById('trip-pts-live').textContent = '0 puntos registrados';
+    document.getElementById('trip-timer').textContent    = '0:00:00';
+    showTripState('recording');
+    tripTimerInterval = setInterval(updateTripTimer, 1000);
+  }
+
+  function stopTrip() {
+    isRecording = false;
+    clearInterval(tripTimerInterval);
+    tripTimerInterval = null;
+    computeTripStats();
+    showTripState('summary');
+  }
+
+  function resetTrip() {
+    tripPoints = [];
+    showTripState('idle');
+  }
+
+  function updateTripTimer() {
+    const ms = Date.now() - tripStartTime;
+    const h  = Math.floor(ms / 3600000);
+    const m  = Math.floor((ms % 3600000) / 60000);
+    const s  = Math.floor((ms % 60000)   / 1000);
+    document.getElementById('trip-timer').textContent =
+      `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function computeTripStats() {
+    if (tripPoints.length === 0) return;
+
+    /* ── Speed ── */
+    const speeds    = tripPoints.map(p => p.speed).filter(s => s !== null && s >= 0);
+    const maxSpeedMs = speeds.length ? Math.max(...speeds) : 0;
+    const avgSpeedMs = speeds.length ? speeds.reduce((a,b) => a+b,0) / speeds.length : 0;
+
+    document.getElementById('tr-max-speed').textContent    = (maxSpeedMs * 3.6).toFixed(1) + ' km/h';
+    document.getElementById('tr-max-speed-ms').textContent = (maxSpeedMs).toFixed(2) + ' m/s';
+    document.getElementById('tr-avg-speed').textContent    = (avgSpeedMs * 3.6).toFixed(1) + ' km/h';
+    document.getElementById('tr-avg-speed-ms').textContent = (avgSpeedMs).toFixed(2) + ' m/s';
+
+    /* ── Altitude ── */
+    const alts   = tripPoints.map(p => p.alt).filter(a => a !== null);
+    const altDiff = document.getElementById('tr-alt-diff');
+    const altDetail = document.getElementById('tr-alt-detail');
+
+    if (alts.length >= 2) {
+      const startAlt = alts[0];
+      const endAlt   = alts[alts.length - 1];
+      const diff     = endAlt - startAlt;
+      const maxAlt   = Math.max(...alts);
+      const minAlt   = Math.min(...alts);
+
+      altDiff.textContent = (diff >= 0 ? '+' : '') + Math.round(diff) + ' m';
+      altDiff.className   = 's-value ' + (diff > 1 ? 'up' : diff < -1 ? 'down' : 'flat');
+      altDetail.textContent =
+        `Inicio ${Math.round(startAlt)} m → Fin ${Math.round(endAlt)} m  |  ` +
+        `Máx ${Math.round(maxAlt)} m  Mín ${Math.round(minAlt)} m`;
+    } else {
+      altDiff.textContent   = 'Sin datos de altitud';
+      altDiff.className     = 's-value flat';
+      altDetail.textContent = 'El GPS no reportó altitud en este recorrido';
+    }
+
+    /* ── Distance (Haversine) ── */
+    let distM = 0;
+    for (let i = 1; i < tripPoints.length; i++)
+      distM += haversine(tripPoints[i-1].lat, tripPoints[i-1].lon, tripPoints[i].lat, tripPoints[i].lon);
+    document.getElementById('tr-distance').textContent =
+      distM >= 1000 ? (distM/1000).toFixed(2) + ' km' : Math.round(distM) + ' m';
+
+    /* ── Duration ── */
+    const durationMs = tripPoints[tripPoints.length-1].ts - tripPoints[0].ts;
+    document.getElementById('tr-duration').textContent = formatDuration(durationMs);
+
+    /* ── Points ── */
+    document.getElementById('tr-points').textContent = tripPoints.length;
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2-lat1) * Math.PI/180;
+    const dLon = (lon2-lon1) * Math.PI/180;
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function formatDuration(ms) {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000)   / 1000);
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+
+  /* ═══════════════════════════════════
+     COORDINATES TAB
+  ═══════════════════════════════════ */
+  function refreshCoords() {
+    if (lastPos) { renderCoords(lastPos); return; }
+    if (!isTracking) setMessage('Inicia el GPS primero desde la pestaña Velocidad.');
+    else setMessage('Esperando señal GPS...');
+  }
+
+  function renderCoords(pos) {
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+    const ts  = new Date(pos.timestamp);
+
+    document.getElementById('no-gps-notice').style.display = 'none';
+    document.getElementById('coord-list').style.display    = 'flex';
+    document.getElementById('coords-ts').textContent =
+      'Act. ' + ts.toLocaleTimeString('es', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+    setText('fmt-dd',
+      lat.toFixed(6) + '° ' + (lat >= 0 ? 'N' : 'S') + ',  ' +
+      lon.toFixed(6) + '° ' + (lon >= 0 ? 'E' : 'O'));
+    setText('fmt-dms', toDMSStr(lat,'lat') + '  ' + toDMSStr(lon,'lon'));
+    setText('fmt-ddm', toDDMStr(lat,'lat') + '  ' + toDDMStr(lon,'lon'));
+
+    const utm = toUTM(lat, lon);
+    setText('fmt-utm', `${utm.zone}${utm.letter}  E ${utm.easting}  N ${utm.northing}`);
+    setText('fmt-geohash', toGeohash(lat, lon, 9));
+
+    const ecef = toECEF(lat, lon, pos.coords.altitude || 0);
+    setText('fmt-ecef', `X: ${ecef.x}  Y: ${ecef.y}  Z: ${ecef.z}`);
+
+    const gmUrl = `https://maps.google.com/?q=${lat.toFixed(6)},${lon.toFixed(6)}`;
+    document.getElementById('fmt-gmaps').innerHTML = `<a href="${gmUrl}" target="_blank">${gmUrl}</a>`;
+    document.getElementById('fmt-gmaps-raw').textContent = gmUrl;
+
+    const wzUrl = `https://waze.com/ul?ll=${lat.toFixed(6)},${lon.toFixed(6)}&navigate=yes`;
+    document.getElementById('fmt-waze').innerHTML = `<a href="${wzUrl}" target="_blank">${wzUrl}</a>`;
+    document.getElementById('fmt-waze-raw').textContent = wzUrl;
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    el.textContent = val; el.className = 'coord-value';
+  }
+
+  function copyCoord(id, btn) {
+    const text = document.getElementById(id).textContent.trim();
+    if (!text || text === '—') return;
+    const done = () => {
+      btn.textContent = '✓ Copiado'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copiar'; btn.classList.remove('copied'); }, 1800);
+    };
+    navigator.clipboard.writeText(text).then(done).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      done();
+    });
+  }
+
+  /* ── Coord conversion helpers ── */
+  function toDMSStr(decimal, axis) {
+    const abs = Math.abs(decimal);
+    const deg = Math.floor(abs);
+    const minF = (abs - deg) * 60;
+    const min  = Math.floor(minF);
+    const sec  = ((minF - min) * 60).toFixed(2);
+    const dir  = axis === 'lat' ? (decimal >= 0 ? 'N' : 'S') : (decimal >= 0 ? 'E' : 'O');
+    return `${deg}°${String(min).padStart(2,'0')}'${String(sec).padStart(5,'0')}"${dir}`;
+  }
+
+  function toDDMStr(decimal, axis) {
+    const abs = Math.abs(decimal);
+    const deg = Math.floor(abs);
+    const min = ((abs - deg) * 60).toFixed(4);
+    const dir = axis === 'lat' ? (decimal >= 0 ? 'N' : 'S') : (decimal >= 0 ? 'E' : 'O');
+    return `${deg}°${min}'${dir}`;
+  }
+
+  function toUTM(lat, lon) {
+    const a=6378137, f=1/298.257223563, b=a*(1-f), e2=1-(b*b)/(a*a), k0=.9996, ep2=e2/(1-e2);
+    const zone  = Math.floor((lon+180)/6)+1;
+    const lon0  = ((zone-1)*6-180+3)*Math.PI/180;
+    const latR  = lat*Math.PI/180, lonR = lon*Math.PI/180;
+    const N=a/Math.sqrt(1-e2*Math.sin(latR)**2), T=Math.tan(latR)**2, C=ep2*Math.cos(latR)**2;
+    const A=Math.cos(latR)*(lonR-lon0);
+    const M=a*((1-e2/4-3*e2**2/64-5*e2**3/256)*latR
+      -(3*e2/8+3*e2**2/32+45*e2**3/1024)*Math.sin(2*latR)
+      +(15*e2**2/256+45*e2**3/1024)*Math.sin(4*latR)
+      -(35*e2**3/3072)*Math.sin(6*latR));
+    let x=k0*N*(A+(1-T+C)*A**3/6+(5-18*T+T**2+72*C-58*ep2)*A**5/120)+500000;
+    let y=k0*(M+N*Math.tan(latR)*(A**2/2+(5-T+9*C+4*C**2)*A**4/24+(61-58*T+T**2+600*C-330*ep2)*A**6/720));
+    if (lat<0) y+=10000000;
+    const letter='CDEFGHJKLMNPQRSTUVWXX'[Math.min(Math.floor((lat+80)/8),20)];
+    return { zone, letter, easting: Math.round(x), northing: Math.round(y) };
+  }
+
+  function toGeohash(lat, lon, precision=9) {
+    const B='0123456789bcdefghjkmnpqrstuvwxyz';
+    let idx=0,bit=0,even=true,hash='';
+    let [mLa,xLa,mLo,xLo]=[-90,90,-180,180];
+    while (hash.length<precision) {
+      if (even) { const m=(mLo+xLo)/2; lon>=m?(idx=idx*2+1,mLo=m):(idx=idx*2,xLo=m); }
+      else       { const m=(mLa+xLa)/2; lat>=m?(idx=idx*2+1,mLa=m):(idx=idx*2,xLa=m); }
+      even=!even;
+      if (++bit===5) { hash+=B[idx]; bit=0; idx=0; }
+    }
+    return hash;
+  }
+
+  function toECEF(lat, lon, alt) {
+    const a=6378137,f=1/298.257223563,e2=2*f-f*f;
+    const latR=lat*Math.PI/180, lonR=lon*Math.PI/180;
+    const N=a/Math.sqrt(1-e2*Math.sin(latR)**2);
+    return {
+      x: Math.round((N+alt)*Math.cos(latR)*Math.cos(lonR)),
+      y: Math.round((N+alt)*Math.cos(latR)*Math.sin(lonR)),
+      z: Math.round((N*(1-e2)+alt)*Math.sin(latR))
+    };
+  }
+
+  /* ═══════════════════════════════════
+     PWA — Service Worker & Install
+  ═══════════════════════════════════ */
+  let deferredInstallPrompt = null;
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+  }
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    document.getElementById('btn-install').style.display = 'block';
+  });
+
+  window.addEventListener('appinstalled', () => {
+    document.getElementById('btn-install').style.display = 'none';
+    deferredInstallPrompt = null;
+  });
+
+  function installApp() {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.then(() => {
+      deferredInstallPrompt = null;
+      document.getElementById('btn-install').style.display = 'none';
+    });
+  }
+</script>
+
+</body>
+</html>
