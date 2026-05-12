@@ -397,7 +397,7 @@
       <div class="cards">
         <div class="card kmh"><span class="val" id="val-kmh">0.0</span><span class="unit">km/h</span></div>
         <div class="card ms"> <span class="val" id="val-ms">0.000</span><span class="unit">m/s</span></div>
-        <div class="card mhr"><span class="val" id="val-mhr">0</span><span class="unit">m/hr</span></div>
+        <div class="card mhr"><span class="val" id="val-mhr">0.0</span><span class="unit">mi/hr</span></div>
       </div>
 
       <!-- Live stats -->
@@ -692,12 +692,12 @@
 
     const ms  = (speed !== null && speed >= 0) ? speed : 0;
     const kmh = ms * 3.6;
-    const mhr = ms * 3600;
+    const mhr = ms * 2.23694; // m/s → millas/hr
 
     document.getElementById('accuracy-badge').textContent = `Precisión GPS: ±${Math.round(accuracy)} m`;
     document.getElementById('val-kmh').textContent        = kmh.toFixed(1);
     document.getElementById('val-ms').textContent         = ms.toFixed(3);
-    document.getElementById('val-mhr').textContent        = Math.round(mhr).toLocaleString();
+    document.getElementById('val-mhr').textContent        = mhr.toFixed(1);
     document.getElementById('main-speed').textContent     = kmh.toFixed(1);
     updateSpeedo(kmh);
 
