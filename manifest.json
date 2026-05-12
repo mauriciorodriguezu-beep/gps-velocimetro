@@ -1,6 +1,6 @@
 {
-  "name": "GPS Velocímetro",
-  "short_name": "Velocímetro",
+  "name": "GPS & Speed",
+  "short_name": "GPS & Speed",
   "description": "Mide tu velocidad en km/h, m/s y m/hr, graba recorridos y consulta coordenadas GPS.",
   "start_url": "./index.html",
   "scope": "./",
