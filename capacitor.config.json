@@ -1,0 +1,17 @@
+{
+  "appId": "com.mauricio.gpsspeed",
+  "appName": "GPS & Speed",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "BackgroundGeolocation": {
+      "backgroundMessage": "GPS & Speed está midiendo tu velocidad en segundo plano",
+      "backgroundTitle": "GPS & Speed activo",
+      "requestPermissions": true,
+      "stale": false,
+      "distanceFilter": 5
+    }
+  }
+}
