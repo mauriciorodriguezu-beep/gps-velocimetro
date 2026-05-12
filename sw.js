@@ -1,4 +1,4 @@
-const CACHE = 'gps-velocimetro-v2';
+const CACHE = 'gps-velocimetro-v3';
 const ASSETS = [
   './',
   './index.html',
